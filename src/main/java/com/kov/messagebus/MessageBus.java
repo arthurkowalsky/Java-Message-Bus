@@ -1,14 +1,29 @@
 package com.kov.messagebus;
 
+import org.reflections.Reflections;
+import org.reflections.scanners.Scanners;
+import org.reflections.util.ClasspathHelper;
+import org.reflections.util.ConfigurationBuilder;
+
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class MessageBus implements MessageBusInterface {
-    private final Map<Class<?>, Object> handlers;
+    private final Map<Class<?>, Object> handlers = new HashMap<>();
 
     public MessageBus() {
-        handlers = new HashMap<>();
+    }
+
+    public MessageBus(String basePackage) {
+        Set<Class<?>> handlerClasses = new Reflections(
+                new ConfigurationBuilder()
+                        .addUrls(ClasspathHelper.forPackage(basePackage))
+                        .addScanners(Scanners.TypesAnnotated, Scanners.SubTypes))
+                .getTypesAnnotatedWith(MessageHandler.class);
+
+        handlerClasses.forEach(this::registerHandler);
     }
 
     @Override

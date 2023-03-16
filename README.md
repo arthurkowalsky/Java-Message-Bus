@@ -12,59 +12,6 @@ A simple and lightweight Java message bus library for handling communication bet
 - Supports any Java class as a message without requiring to implement interfaces
 - Can be easily integrated into any Java project, including Spring Boot applications
 
-## Usage
-
-### 1. Add the dependency
-
-Add the `message-bus` dependency to your project's `pom.xml`:
-
-```xml
-<dependencies>
-    <dependency>
-        <groupId>com.kov</groupId>
-        <artifactId>message-bus</artifactId>
-        <version>1.0.0</version>
-    </dependency>
-</dependencies>
-```
-
-
-### 2. Create message classes
-   Create a message class for each type of message you want to handle:
-```java
-public class SmsNotification {
-// Add any properties and methods specific to SmsNotification.
-}
-```
-
-### 3. Create handler classes
-Create a handler class for each message type and annotate it with @MessageHandler:
-
-```java
-import com.kov.messagebus.MessageHandler;
-
-@MessageHandler
-public class SmsNotificationHandler {
-    public Void invoke(SmsNotification message) {
-        // ... do some work - like sending an SMS message!
-        return null;
-    }
-}
-```
-
-### 4. Initialize the message bus
-Create a new MessageBus instance and provide the package name where your handlers are located:
-
-```java
-MessageBusInterface bus = new MessageBus("com.kov.handlers");
-```
-
-### 5. Invoke messages
-Invoke messages using the invoke method on the message bus:
-```java
-bus.invoke(new SmsNotification());
-```
-
 
 ## Integration with Spring Boot
 
@@ -82,7 +29,6 @@ public class MessageBusConfiguration {
 
     @Bean
     public MessageBusInterface messageBus() {
-        String basePackage = getBasePackage();
         return new MessageBus(getClass().getPackage().getName());
     }
 }
@@ -113,6 +59,60 @@ public class ExampleController {
         return "SMS sent";
     }
 }
+```
+
+## Usage
+
+### 1. Add the dependency
+
+Add the `message-bus` dependency to your project's `pom.xml`:
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>com.kov</groupId>
+        <artifactId>message-bus</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+</dependencies>
+```
+
+
+### 2. Create message classes
+Create a message class for each type of message you want to handle:
+```java
+public class SmsNotification {
+// Add any properties and methods specific to SmsNotification.
+}
+```
+
+### 3. Create handler classes
+Create a handler class for each message type and annotate it with @MessageHandler:
+
+```java
+import com.kov.messagebus.MessageHandler;
+
+@MessageHandler
+public class SmsNotificationHandler {
+    public Void invoke(SmsNotification message) {
+        // ... do some work - like sending an SMS message!
+        return null;
+    }
+}
+```
+
+### 4. Initialize the message bus
+Create a new MessageBus instance and provide the package name where your handlers are located:
+
+```java
+MessageBusInterface bus = new MessageBus();
+bus.registerHandler(SmsNotificationHandler.class);
+```
+
+### 5. Invoke messages
+Invoke messages using the invoke method on the message bus:
+```java
+bus.invoke(new SmsNotification());
 ```
 
 

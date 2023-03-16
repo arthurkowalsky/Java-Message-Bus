@@ -1,17 +1,25 @@
 package com.kov.messagebus;
 
+import com.kov.messagebus.messages.PackageScanningTestMessageHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class MessageBusTest {
+public class MessageBusTest {
     private MessageBus messageBus;
 
     @BeforeEach
     void setUp() {
         messageBus = new MessageBus();
     }
+    @Test
+    void testConstructorWithPackageScanning() {
+        MessageBus messageBus = new MessageBus(Test.class.getPackage().getName());
+
+        assertInstanceOf(MessageBus.class, messageBus);
+    }
+
 
     @Test
     void testRegisterHandlerAndInvoke() {
@@ -116,7 +124,7 @@ class MessageBusTest {
         }
     }
 
-    static class TestMessage {
+    public static class TestMessage {
         private final String content;
 
         public TestMessage(String content) {
