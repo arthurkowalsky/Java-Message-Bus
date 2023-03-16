@@ -43,6 +43,7 @@ public class MessageBus implements MessageBusInterface {
                 throw new RuntimeException("Failed to invoke handler for message: " + message.getClass().getName(), e);
             }
         }
+
         throw new RuntimeException("No handler registered for message: " + message.getClass().getName());
     }
 }

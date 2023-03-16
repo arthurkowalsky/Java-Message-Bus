@@ -44,6 +44,28 @@ class MessageBusTest {
         assertTrue(exception.getMessage().contains("Failed to invoke handler for message"));
     }
 
+    @Test
+    void testRegisterHandlerWithoutAnnotation() {
+        messageBus.registerHandler(NoAnnotationTestMessageHandler.class);
+
+        assertThrows(RuntimeException.class, () -> messageBus.invoke(new TestMessage("Hello, world!")));
+    }
+
+    @Test
+    void testRegisterHandlerWithTwoParameters() {
+        messageBus.registerHandler(TwoParametersTestMessageHandler.class);
+
+        assertThrows(RuntimeException.class, () -> messageBus.invoke(new TestMessage("Hello, world!")));
+    }
+
+    @Test
+    void testInvokeHandlerWithDifferentMethodNames() {
+        messageBus.registerHandler(DifferentMethodNamesTestMessageHandler.class);
+
+        String result = messageBus.invoke(new TestMessage("Hello, world!"));
+        assertEquals("Processed: Hello, world!", result);
+    }
+
     @MessageHandler
     static class BrokenTestMessageHandler {
         public BrokenTestMessageHandler() throws Exception {
@@ -67,6 +89,30 @@ class MessageBusTest {
     static class TestMessageHandler {
         public String invoke(TestMessage message) {
             return "Processed: " + message.getContent();
+        }
+    }
+
+    static class NoAnnotationTestMessageHandler {
+        public String invoke(TestMessage message) {
+            return "This should not be called";
+        }
+    }
+
+    @MessageHandler
+    static class TwoParametersTestMessageHandler {
+        public String invoke(TestMessage message, String extraParameter) {
+            return "This should not be called";
+        }
+    }
+
+    @MessageHandler
+    static class DifferentMethodNamesTestMessageHandler {
+        public String invoke(TestMessage message) {
+            return "Processed: " + message.getContent();
+        }
+
+        public String anotherMethod(TestMessage message) {
+            return "This should not be called";
         }
     }
 
