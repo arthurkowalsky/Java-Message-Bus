@@ -1,138 +1,234 @@
 package com.kov.messagebus;
 
-import com.kov.messagebus.messages.PackageScanningTestMessageHandler;
+import com.kov.messagebus.exceptions.NoHandlerFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
-public class MessageBusTest {
+class MessageBusTest {
+
     private MessageBus messageBus;
 
-    @BeforeEach
-    void setUp() {
-        messageBus = new MessageBus();
-    }
-    @Test
-    void testConstructorWithPackageScanning() {
-        MessageBus messageBus = new MessageBus(Test.class.getPackage().getName());
-
-        assertInstanceOf(MessageBus.class, messageBus);
-    }
-
-
-    @Test
-    void testRegisterHandlerAndInvoke() {
-        messageBus.registerHandler(TestMessageHandler.class);
-
-        String result = messageBus.invoke(new TestMessage("Hello, world!"));
-        assertEquals("Processed: Hello, world!", result);
-    }
-
-    @Test
-    void testInvokeWithoutHandler() {
-        assertThrows(RuntimeException.class, () -> messageBus.invoke(new TestMessage("Hello, world!")));
-    }
-
-    @Test
-    public void testRegisterHandlerThrowsExceptionOnHandlerCreationFailure() {
-        Class<?> handlerClass = BrokenTestMessageHandler.class;
-
-        Exception exception = assertThrows(RuntimeException.class, () -> messageBus.registerHandler(handlerClass));
-        assertTrue(exception.getMessage().contains("Failed to register handler"));
-    }
-
-    @Test
-    public void testInvokeThrowsExceptionWhenHandlerInvocationFails() {
-        messageBus.registerHandler(FailingTestMessageHandler.class);
-
-        TestMessage testMessage = new TestMessage("hello world");
-
-        Exception exception = assertThrows(RuntimeException.class, () -> messageBus.invoke(testMessage));
-        assertTrue(exception.getMessage().contains("Failed to invoke handler for message"));
-    }
-
-    @Test
-    void testRegisterHandlerWithoutAnnotation() {
-        messageBus.registerHandler(NoAnnotationTestMessageHandler.class);
-
-        assertThrows(RuntimeException.class, () -> messageBus.invoke(new TestMessage("Hello, world!")));
-    }
-
-    @Test
-    void testRegisterHandlerWithTwoParameters() {
-        messageBus.registerHandler(TwoParametersTestMessageHandler.class);
-
-        assertThrows(RuntimeException.class, () -> messageBus.invoke(new TestMessage("Hello, world!")));
-    }
-
-    @Test
-    void testInvokeHandlerWithDifferentMethodNames() {
-        messageBus.registerHandler(DifferentMethodNamesTestMessageHandler.class);
-
-        String result = messageBus.invoke(new TestMessage("Hello, world!"));
-        assertEquals("Processed: Hello, world!", result);
-    }
-
-    @MessageHandler
-    static class BrokenTestMessageHandler {
-        public BrokenTestMessageHandler() throws Exception {
-            throw new Exception("Failed to create the handler");
-        }
-
-        public Void invoke(TestMessage message) {
-            // This method will not be called since the constructor fails.
-            return null;
-        }
-    }
-
-    @MessageHandler
-    static class FailingTestMessageHandler {
-        public Void invoke(TestMessage message) {
-            throw new RuntimeException("Failed to invoke the handler");
-        }
-    }
-
-    @MessageHandler
-    static class TestMessageHandler {
-        public String invoke(TestMessage message) {
-            return "Processed: " + message.getContent();
-        }
-    }
-
-    static class NoAnnotationTestMessageHandler {
-        public String invoke(TestMessage message) {
-            return "This should not be called";
-        }
-    }
-
-    @MessageHandler
-    static class TwoParametersTestMessageHandler {
-        public String invoke(TestMessage message, String extraParameter) {
-            return "This should not be called";
-        }
-    }
-
-    @MessageHandler
-    static class DifferentMethodNamesTestMessageHandler {
-        public String invoke(TestMessage message) {
-            return "Processed: " + message.getContent();
-        }
-
-        public String anotherMethod(TestMessage message) {
-            return "This should not be called";
-        }
-    }
-
-    public static class TestMessage {
+    static class TestMessage {
         private final String content;
 
-        public TestMessage(String content) {
+        TestMessage(String content) {
             this.content = content;
         }
 
-        public String getContent() {
+        String getContent() {
             return content;
         }
     }
+
+    static class TestMessageHandler implements MessageHandler<TestMessage, String> {
+        @Override
+        public String handle(TestMessage message) {
+            return "Handler: " + message.getContent();
+        }
+    }
+
+    static class TestMiddleware implements Middleware {
+        private final String name;
+        private final StringBuilder output;
+
+        TestMiddleware(String name, StringBuilder output) {
+            this.name = name;
+            this.output = output;
+        }
+
+        @Override
+        public <R, T> R invoke(T message, Next<R> next) {
+            output.append(name).append(" before -> ");
+            R result = next.invoke();
+            output.append(name).append(" after -> ");
+            return result;
+        }
+    }
+
+    static class Query {
+        public Query(String content) {
+            this.content = content;
+        }
+        public String content;
+    }
+
+    static class QueryHandler implements MessageHandler<Query, String> {
+        @Override
+        public String handle(Query message) {
+            return message.content + " QueryHandler";
+        }
+
+    }
+
+    static class QueryMiddleware implements Middleware {
+
+        private final String name;
+
+        public QueryMiddleware(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public <R, T> R invoke(T message, Next<R> next) {
+            if (message instanceof Query) {
+                Query query = (Query) message;
+                query.content = query.content + " " + name;
+            }
+            return next.invoke();
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        messageBus = MessageBus.create();
+    }
+
+    @Test
+    void testRegisterAndDispatchHandler() {
+        messageBus.withHandlers(List.of(new TestMessageHandler()));
+
+        String result = messageBus.dispatch(new TestMessage("John"));
+        assertEquals("Handler: John", result);
+    }
+
+    @Test
+    void testDispatchMessageWithoutHandlerThrowsException() {
+        assertThrows(RuntimeException.class, () -> messageBus.dispatch(new TestMessage("NoHandlerMessage")));
+    }
+
+    @Test
+    void testAllowNoHandlersOption() {
+        messageBus.withAllowNoHandlers(true);
+        assertNull(messageBus.dispatch(new TestMessage("NoHandlerMessage")));
+    }
+
+    @Test
+    void testMiddlewareOrderAndInvocation() {
+        StringBuilder middlewareOutput = new StringBuilder();
+
+        TestMiddleware middleware1 = new TestMiddleware("Middleware1", middlewareOutput);
+        TestMiddleware middleware2 = new TestMiddleware("Middleware2", middlewareOutput);
+
+        messageBus.withMiddlewares(List.of(middleware1, middleware2))
+                .withHandlers(List.of(new TestMessageHandler()));
+
+        String result = messageBus.dispatch(new TestMessage("John"));
+        assertEquals("Handler: John", result);
+        assertEquals("Middleware1 before -> Middleware2 before -> Middleware2 after -> Middleware1 after -> ", middlewareOutput.toString());
+    }
+
+    @Test
+    void testMiddlewaresModifyingMessage() {
+        QueryMiddleware queryMiddleware1 = new QueryMiddleware("QueryMiddleware1");
+        QueryMiddleware queryMiddleware2 = new QueryMiddleware("QueryMiddleware2");
+
+        messageBus.withMiddlewares(List.of(queryMiddleware1, queryMiddleware2)).withHandlers(List.of(new QueryHandler()));
+
+        String result = messageBus.dispatch(new Query("Query"));
+        assertEquals("Query QueryMiddleware1 QueryMiddleware2 QueryHandler", result);
+    }
+
+
+    @Test
+    void testMiddlewareThrowingException() {
+        TestMiddleware middleware1 = new TestMiddleware("Middleware1", new StringBuilder()) {
+            @Override
+            public <R, T> R invoke(T message, Next<R> next) {
+                throw new RuntimeException("Middleware1 error");
+            }
+        };
+
+        messageBus.withMiddlewares(List.of(middleware1))
+                .withHandlers(List.of(new TestMessageHandler()));
+
+        assertThrows(RuntimeException.class, () -> messageBus.dispatch(new TestMessage("John")), "Middleware1 error");
+    }
+
+    @Test
+    void testNoHandlerFoundException() {
+        NoHandlerFoundException exception = assertThrows(NoHandlerFoundException.class, () -> messageBus.dispatch(new TestMessage("NoHandlerMessage")));
+        assertEquals("No handler found for message: com.kov.messagebus.MessageBusTest$TestMessage", exception.getMessage());
+    }
+
+    @Test
+    void testMultipleHandlersForSingleMessage() {
+        messageBus.withHandlers(List.of(new TestMessageHandler(), new TestMessageHandlerExtra()));
+
+        String result = messageBus.dispatch(new TestMessage("John"));
+        assertEquals("Handler: John Extra", result);
+    }
+
+    static class TestMessageHandlerExtra implements MessageHandler<TestMessage, String> {
+        @Override
+        public String handle(TestMessage message) {
+            return "Handler: " + message.getContent() + " Extra";
+        }
+    }
+
+    @Test
+    void testComplexMessageData() {
+        messageBus.withHandlers(List.of(new ComplexMessageHandler()));
+
+        ComplexMessage complexMessage = new ComplexMessage("John", 30, List.of("Java", "Python"));
+        String result = messageBus.dispatch(complexMessage);
+        assertEquals("Handler: John is 30 years old and knows Java, Python.", result);
+    }
+
+    static class ComplexMessage {
+        private final String name;
+        private final int age;
+        private final List<String> skills;
+
+        ComplexMessage(String name, int age, List<String> skills) {
+            this.name = name;
+            this.age = age;
+            this.skills = skills;
+        }
+
+        String getName() {
+            return name;
+        }
+
+        int getAge() {
+            return age;
+        }
+
+        List<String> getSkills() {
+            return skills;
+        }
+    }
+
+    static class ComplexMessageHandler implements MessageHandler<ComplexMessage, String> {
+        @Override
+        public String handle(ComplexMessage message) {
+            return "Handler: " + message.getName() + " is " + message.getAge() + " years old and knows " + String.join(", ", message.getSkills()) + ".";
+        }
+    }
+
+    @Test
+    void testNullMessageThrowsException() {
+        messageBus.withHandlers(List.of(new TestMessageHandler()));
+        assertThrows(NullPointerException.class, () -> messageBus.dispatch(null));
+    }
+
+    @Test
+    void testInvalidMessageDataThrowsException() {
+        messageBus.withHandlers(List.of(new InvalidMessageHandler()));
+        assertThrows(IllegalArgumentException.class, () -> messageBus.dispatch(new TestMessage("Invalid")));
+    }
+
+    static class InvalidMessageHandler implements MessageHandler<TestMessage, String> {
+        @Override
+        public String handle(TestMessage message) {
+            if ("Invalid".equals(message.getContent())) {
+                throw new IllegalArgumentException("Invalid message content");
+            }
+            return "Handler: " + message.getContent();
+        }
+    }
+
 }

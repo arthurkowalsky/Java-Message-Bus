@@ -8,29 +8,45 @@ A simple and lightweight Java message bus library for handling communication bet
 ## Features
 
 - Easy-to-use message bus interface
-- Automatic handler registration using annotations
 - Supports any Java class as a message without requiring to implement interfaces
-- Can be easily integrated into any Java project, including Spring Boot applications
+- Middleware support for message processing
+- Can be easily integrated into any Java project
 
 
 ## Integration with Spring Boot
 
 ### 1. Create a configuration class
-Create a new configuration class to configure the message bus:
+Create a new configuration class to configure the message buses:
 
 ```java
 import com.kov.messagebus.MessageBus;
 import com.kov.messagebus.MessageBusInterface;
+import com.kov.messagebus.handlers.CommandHandler;
+import com.kov.messagebus.handlers.EventHandler;
+import com.kov.messagebus.handlers.QueryHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.ObjectProvider;
 
 @Configuration
 public class MessageBusConfiguration {
 
     @Bean
-    public MessageBusInterface messageBus() {
-        return new MessageBus(getClass().getPackage().getName());
+    public MessageBusInterface commandBus(ObjectProvider<CommandHandler> handlers) {
+        return MessageBus.create().withHandlers(handlers.stream().toList());
     }
+
+    @Bean
+    public MessageBusInterface queryBus(ObjectProvider<QueryHandler> handlers) {
+        return MessageBus.create().withHandlers(handlers.stream().toList());
+    }
+
+    @Bean
+    public MessageBusInterface eventBus(ObjectProvider<EventHandler> handlers) {
+        return MessageBus.create().withAllowNoHandlers(true)
+                .withHandlers(handlers.stream().toList());
+    }
+
 }
 ```
 
@@ -47,15 +63,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ExampleController {
 
-    private final MessageBusInterface messageBus;
+    private final MessageBusInterface commandBus;
 
-    public ExampleController(MessageBusInterface messageBus) {
-        this.messageBus = messageBus;
+    public ExampleController(MessageBusInterface commandBus) {
+        this.commandBus = commandBus;
     }
 
     @GetMapping("/send-sms")
     public String sendSms() {
-        messageBus.invoke(new SmsNotification());
+        commandBus.dispatch(new SmsNotificationCommand());
         return "SMS sent";
     }
 }
@@ -66,55 +82,107 @@ public class ExampleController {
 ### 1. Add the dependency
 
 Add the `message-bus` dependency to your project's `pom.xml`:
-
 ```xml
 <dependencies>
     <dependency>
         <groupId>com.kov</groupId>
         <artifactId>message-bus</artifactId>
-        <version>1.0.0</version>
+        <version>2.0.0</version>
     </dependency>
 </dependencies>
 ```
 
-
 ### 2. Create message classes
-Create a message class for each type of message you want to handle:
+
+Create a message class for each type of message you want to handle, such as commands, events, and queries:
 ```java
-public class SmsNotification {
-// Add any properties and methods specific to SmsNotification.
+import com.kov.messagebus.messages.Command;
+import com.kov.messagebus.messages.Event;
+import com.kov.messagebus.messages.Query;
+
+public class SmsNotificationCommand implements Command{
+// Add any properties and methods specific to SmsNotificationCommand.
+}
+
+public class SmsWasSentEvent implements Event{
+// Add any properties and methods specific to SmsWasSentEvent.
+}
+
+public class GetNotificationsListsQuery implements Query{
+// Add any properties and methods specific to GetSmsListsQuery.
 }
 ```
 
 ### 3. Create handler classes
-Create a handler class for each message type and annotate it with @MessageHandler:
+
+Create a handler class for each message type that implements the appropriate `MessageHandler` interface:
 
 ```java
-import com.kov.messagebus.MessageHandler;
+import com.kov.messagebus.MessageBusInterface;
+import com.kov.messagebus.handlers.CommandHandler;
+import com.kov.messagebus.handlers.QueryHandler;
 
-@MessageHandler
-public class SmsNotificationHandler {
-    public Void invoke(SmsNotification message) {
+public class SmsNotificationCommandHandler implements CommandHandler<SmsNotificationCommand> {
+    MessageBusInterface eventBus;
+
+    public SmsNotificationCommandHandler(MessageBusInterface eventBus) {
+        this.eventBus = eventBus;
+    }
+
+    @Override
+    public Void handle(SmsNotificationCommand message) {
         // ... do some work - like sending an SMS message!
-        return null;
+        this.eventBus.dispatch(new SmsWasSentEvent());
+    }
+}
+
+public class GetNotificationsListsQueryHandler implements QueryHandler<GetNotificationsListsQuery, String[]> {
+    @Override
+    public String[] handle(GetNotificationsListsQuery query) {
+        // ... fetch notifications from the database
+        return ["Notification1", "Notification 2"];
+    }
+}
+```
+### 4. Initialize the message bus
+
+Create a new `MessageBus` instance and register the handlers:
+
+```java
+MessageBusInterface bus = MessageBus.create();
+bus.withHandlers(List.of(new SmsNotificationCommandHandler()));
+```
+
+### 5. Invoke messages
+
+Invoke messages using the `dispatch` method on the message bus:
+
+```java
+bus.dispatch(new SmsNotificationCommand());
+```
+
+## Middleware
+
+You can also create custom middleware classes that implement the `Middleware` interface and add them to the message bus:
+
+```java
+import com.kov.messagebus.Middleware;
+import com.kov.messagebus.Next;
+
+public class LoggingMiddleware implements Middleware {
+    @Override
+    public <R, T> R invoke(T message, Next<R> next) {
+        System.out.println("Middleware: " + message.getClass().getSimpleName());
+        return next.invoke();
     }
 }
 ```
 
-### 4. Initialize the message bus
-Create a new MessageBus instance and provide the package name where your handlers are located:
+Register the middleware with the message bus:
 
 ```java
-MessageBusInterface bus = new MessageBus();
-bus.registerHandler(SmsNotificationHandler.class);
+bus.withMiddlewares(List.of(new LoggingMiddleware()));
 ```
-
-### 5. Invoke messages
-Invoke messages using the invoke method on the message bus:
-```java
-bus.invoke(new SmsNotification());
-```
-
 
 ## License
 This project is licensed under the [MIT License](https://chat.openai.com/chat/LICENSE.md).
